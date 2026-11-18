@@ -12,7 +12,16 @@ if not errorlevel 1 (
 call flutter pub get
 call flutter build windows --release
 if errorlevel 1 (pause & exit /b 1)
-echo Release compiled in build\windows\x64\runner\Release\
-echo IMPORTANT: Copy engine\target\release\futuremirror_engine.exe under
- echo release\engine\target\release\ and launch app from release root.
+if exist package\FutureMirror rmdir /s /q package\FutureMirror
+mkdir package\FutureMirror
+xcopy /e /i /y build\windows\x64\runner\Release\* package\FutureMirror\ >nul
+if exist engine\target\release\futuremirror_engine.exe (
+ mkdir package\FutureMirror\engine\target\release
+ copy /y engine\target\release\futuremirror_engine.exe package\FutureMirror\engine\target\release\ >nul
+)
+copy /y README.md package\FutureMirror\ >nul
+copy /y LICENSE package\FutureMirror\ >nul
+powershell -NoProfile -Command "Compress-Archive -Path 'package\FutureMirror' -DestinationPath 'package\FutureMirror-Windows-x64.zip' -Force"
+if errorlevel 1 (pause & exit /b 1)
+echo Portable release created at package\FutureMirror-Windows-x64.zip
 pause

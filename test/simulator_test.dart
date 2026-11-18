@@ -154,4 +154,34 @@ void main() {
             }),
         throwsFormatException);
   });
+
+  test('workspace archive round-trips model and history', () async {
+    final scenario = Scenario(name: 'Archive test');
+    final result = await Simulator.run(scenario);
+    final model = OperationalModel.defaults();
+    final archive = WorkspaceArchive(
+        model, [SavedRun(DateTime.utc(2026, 11, 18), scenario, result, model)]);
+
+    final restored = WorkspaceArchive.decode(archive.encode());
+
+    expect(restored.model.nodes, hasLength(model.nodes.length));
+    expect(restored.history.single.scenario.name, 'Archive test');
+    expect(restored.history.single.model, isNotNull);
+  });
+
+  test('model diagnostics identify cycles and disconnected systems', () {
+    final model = OperationalModel(const [
+      MirrorNode('a', 'A', 'Operations', 1, .1, .1, .1),
+      MirrorNode('b', 'B', 'Operations', 1, .1, .2, .2),
+      MirrorNode('c', 'C', 'Operations', 1, .1, .3, .3),
+    ], const [
+      MirrorEdge('a', 'b', .5),
+      MirrorEdge('b', 'a', .5),
+    ]);
+
+    final diagnostics = ModelDiagnostics.analyze(model);
+
+    expect(diagnostics.cycleCount, 1);
+    expect(diagnostics.disconnectedNodeIds, ['c']);
+  });
 }

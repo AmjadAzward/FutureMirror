@@ -442,6 +442,94 @@ class OperationalModel {
       };
 }
 
+class ModelDiagnostics {
+  final int cycleCount;
+  final List<String> disconnectedNodeIds;
+  final List<String> sourceNodeIds;
+  final List<String> sinkNodeIds;
+  const ModelDiagnostics(this.cycleCount, this.disconnectedNodeIds,
+      this.sourceNodeIds, this.sinkNodeIds);
+
+  factory ModelDiagnostics.analyze(OperationalModel model) {
+    final outgoing = <String, List<String>>{
+      for (final node in model.nodes) node.id: <String>[]
+    };
+    final incoming = <String, int>{for (final node in model.nodes) node.id: 0};
+    for (final edge in model.edges) {
+      outgoing[edge.from]?.add(edge.to);
+      incoming[edge.to] = (incoming[edge.to] ?? 0) + 1;
+    }
+    final disconnected = model.nodes
+        .where((node) =>
+            outgoing[node.id]!.isEmpty && (incoming[node.id] ?? 0) == 0)
+        .map((node) => node.id)
+        .toList();
+    final sources = model.nodes
+        .where((node) =>
+            (incoming[node.id] ?? 0) == 0 && outgoing[node.id]!.isNotEmpty)
+        .map((node) => node.id)
+        .toList();
+    final sinks = model.nodes
+        .where((node) =>
+            outgoing[node.id]!.isEmpty && (incoming[node.id] ?? 0) > 0)
+        .map((node) => node.id)
+        .toList();
+    final state = <String, int>{};
+    var cycles = 0;
+    void visit(String id) {
+      state[id] = 1;
+      for (final target in outgoing[id]!) {
+        if (state[target] == 1) {
+          cycles++;
+        } else if (state[target] != 2) {
+          visit(target);
+        }
+      }
+      state[id] = 2;
+    }
+
+    for (final node in model.nodes) {
+      if (state[node.id] == null) visit(node.id);
+    }
+    return ModelDiagnostics(cycles, disconnected, sources, sinks);
+  }
+}
+
+class WorkspaceArchive {
+  final OperationalModel model;
+  final List<SavedRun> history;
+  WorkspaceArchive(this.model, this.history);
+
+  String encode() => const JsonEncoder.withIndent('  ').convert({
+        'format': 'FutureMirror Workspace',
+        'schemaVersion': 1,
+        'exportedAt': DateTime.now().toUtc().toIso8601String(),
+        'model': model.toJson(),
+        'history': history.map((run) => run.toJson()).toList()
+      });
+
+  factory WorkspaceArchive.decode(String source) {
+    final decoded = jsonDecode(source);
+    if (decoded is! Map) {
+      throw const FormatException('Workspace backup must be a JSON object.');
+    }
+    final json = Map<String, dynamic>.from(decoded);
+    if (json['format'] != 'FutureMirror Workspace' ||
+        (json['schemaVersion'] as num?)?.toInt() != 1) {
+      throw const FormatException('Unsupported workspace backup format.');
+    }
+    final model = OperationalModel.fromJson(
+        Map<String, dynamic>.from(json['model'] as Map));
+    final runs = (json['history'] as List)
+        .map((item) => SavedRun.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+    if (runs.length > 80) {
+      throw const FormatException('A workspace can contain at most 80 runs.');
+    }
+    return WorkspaceArchive(model, runs);
+  }
+}
+
 class OperationalModelStore {
   static File get file {
     final root = Platform.environment['APPDATA'] ??

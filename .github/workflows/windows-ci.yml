@@ -40,3 +40,21 @@ jobs:
 
       - name: Build Windows release
         run: flutter build windows --release
+
+      - name: Package portable release
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package\FutureMirror | Out-Null
+          Copy-Item -Recurse build\windows\x64\runner\Release\* package\FutureMirror
+          if (Test-Path engine\target\release\futuremirror_engine.exe) {
+            New-Item -ItemType Directory -Force -Path package\FutureMirror\engine\target\release | Out-Null
+            Copy-Item engine\target\release\futuremirror_engine.exe package\FutureMirror\engine\target\release\
+          }
+          Copy-Item README.md,LICENSE package\FutureMirror\
+          Compress-Archive -Path package\FutureMirror -DestinationPath package\FutureMirror-Windows-x64.zip
+
+      - name: Upload portable release
+        uses: actions/upload-artifact@v4
+        with:
+          name: FutureMirror-Windows-x64
+          path: package/FutureMirror-Windows-x64.zip

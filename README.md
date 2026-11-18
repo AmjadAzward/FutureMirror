@@ -1,6 +1,6 @@
 <div align="center">
 
-# FutureMirror
+# FutureMirror 1.0
 
 ### Local-first decision simulation for Windows
 
@@ -29,6 +29,7 @@ FutureMirror is a native Windows laboratory for constructing disruption scenario
 | Decision dashboard | Review illustrative cost, risk, delay, and affected-system indicators |
 | Comparison | Pin one result and compare it with another saved scenario |
 | Local history | Save, load, compare, and remove simulation runs on the current computer |
+| Workspace portability | Copy and restore the complete model and run history as validated JSON |
 | Data export | Write the active scenario and ranked impacts to a portable CSV report |
 | Transparent model | Review assumptions, limitations, and the active execution engine |
 
@@ -71,6 +72,8 @@ The optional Rust executable is launched as a local child process. No network so
 - Deterministic local execution for reproducible scenarios
 - Persistent custom models stored locally beside simulation history
 - Versioned JSON model exchange through the system clipboard
+- Complete versioned workspace backup and restore through the clipboard
+- Live graph diagnostics for feedback loops, disconnected systems, sources, and sinks
 - Reproducible saved runs containing the exact operational-model snapshot used at execution time
 
 > [!IMPORTANT]
@@ -130,6 +133,12 @@ Flutter writes the compiled application to:
 
 ```text
 build\windows\x64\runner\Release\
+```
+
+The build script also produces a self-contained portable archive at:
+
+```text
+package\FutureMirror-Windows-x64.zip
 ```
 
 Keep the generated DLL files and `data` directory beside `future_mirror.exe`. If the Rust engine is packaged, preserve its expected relative path:

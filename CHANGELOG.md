@@ -8,6 +8,10 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Complete workspace backup and restore with schema validation
+- Live model-health diagnostics for cycles, disconnected nodes, sources, and sinks
+- First-use workflow guidance on the command center
+- Downloadable portable Windows package from every successful CI build
 - Versioned JSON copy and import workflows for portable operational models
 - Import validation for duplicate systems, invalid values, and dependencies
 - Exact operational-model snapshots inside newly saved simulation runs

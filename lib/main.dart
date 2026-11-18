@@ -470,6 +470,73 @@ class _HomeState extends State<Home> {
     }
   }
 
+  Future<void> _copyWorkspace() async {
+    final archive = WorkspaceArchive(
+        OperationalModel(modelNodes, modelEdges), List.of(history));
+    await Clipboard.setData(ClipboardData(text: archive.encode()));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Complete workspace backup copied to the clipboard.')));
+  }
+
+  Future<void> _restoreWorkspace() async {
+    final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted) return;
+    final source = TextEditingController(text: clipboard?.text ?? '');
+    final accepted = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+                title: const Text('Restore workspace backup'),
+                content: SizedBox(
+                    width: 580,
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      const Text(
+                          'This replaces the current model and saved-run history after validation.'),
+                      const SizedBox(height: 14),
+                      TextField(
+                          controller: source,
+                          minLines: 10,
+                          maxLines: 15,
+                          decoration: const InputDecoration(
+                              labelText: 'Workspace JSON',
+                              alignLabelWithHint: true))
+                    ])),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Validate and restore'))
+                ]));
+    if (accepted != true || !mounted) {
+      source.dispose();
+      return;
+    }
+    try {
+      final archive = WorkspaceArchive.decode(source.text);
+      setState(() {
+        modelNodes = archive.model.nodes;
+        modelEdges = archive.model.edges;
+        history = archive.history;
+        selectedNode = null;
+      });
+      await OperationalModelStore.save(archive.model);
+      await LocalStore.save(history);
+      if (mounted) await _simulate(save: false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Workspace restored: ${modelNodes.length} systems and ${history.length} saved runs.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Workspace restore failed: $error')));
+    } finally {
+      source.dispose();
+    }
+  }
+
   void update(void Function() fn) {
     setState(fn);
   }
@@ -718,6 +785,23 @@ class _HomeState extends State<Home> {
   Widget _dashboard(bool compact) =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _hero(compact),
+        const SizedBox(height: 16),
+        _card(Wrap(
+            spacing: 18,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              const Icon(Icons.route_outlined, color: cyan),
+              const Text('START HERE',
+                  style: TextStyle(
+                      color: cyan, fontSize: 11, letterSpacing: 1.1)),
+              const Text(
+                  '1. Adjust a scenario   2. Run it   3. Inspect ripple effects   4. Save or compare',
+                  style: TextStyle(color: muted, fontSize: 12)),
+              TextButton(
+                  onPressed: () => setState(() => page = 1),
+                  child: const Text('Open Scenario Lab'))
+            ])),
         const SizedBox(height: 22),
         _metrics(compact),
         const SizedBox(height: 26),
@@ -1149,8 +1233,17 @@ class _HomeState extends State<Home> {
           ]));
   Widget _history() =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _section(
-            'Saved runs', 'Simulation history stored only on this computer'),
+        _section('Saved runs', 'Simulation history stored only on this computer',
+            action: Wrap(spacing: 8, runSpacing: 8, children: [
+              OutlinedButton.icon(
+                  onPressed: _restoreWorkspace,
+                  icon: const Icon(Icons.restore_page_outlined),
+                  label: const Text('Restore workspace')),
+              OutlinedButton.icon(
+                  onPressed: _copyWorkspace,
+                  icon: const Icon(Icons.backup_outlined),
+                  label: const Text('Copy workspace backup'))
+            ])),
         if (history.isEmpty)
           _card(const Text(
               'No saved runs yet. Open Scenario Lab and run your first simulation.'))
@@ -1186,6 +1279,8 @@ class _HomeState extends State<Home> {
       ]);
   Widget _modelEditor() {
     final labels = {for (final node in modelNodes) node.id: node.label};
+    final diagnostics = ModelDiagnostics.analyze(
+        OperationalModel(modelNodes, modelEdges));
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _section('Operational model',
           'Customize the systems and directional dependencies used by every new simulation'),
@@ -1207,6 +1302,19 @@ class _HomeState extends State<Home> {
             icon: const Icon(Icons.restart_alt),
             label: const Text('Reset defaults'))
       ]),
+      const SizedBox(height: 12),
+      _card(Wrap(spacing: 18, runSpacing: 10, children: [
+        _healthChip(Icons.account_tree_outlined,
+            '${diagnostics.cycleCount} feedback loop${diagnostics.cycleCount == 1 ? '' : 's'}',
+            diagnostics.cycleCount == 0 ? cyan : amber),
+        _healthChip(Icons.link_off,
+            '${diagnostics.disconnectedNodeIds.length} disconnected',
+            diagnostics.disconnectedNodeIds.isEmpty ? cyan : amber),
+        _healthChip(Icons.call_split, '${diagnostics.sourceNodeIds.length} sources',
+            purple),
+        _healthChip(Icons.call_merge, '${diagnostics.sinkNodeIds.length} sinks',
+            purple)
+      ])),
       const SizedBox(height: 12),
       _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -1316,6 +1424,18 @@ class _HomeState extends State<Home> {
               style: TextStyle(color: muted, height: 1.6))
         ]))
       ]);
+
+  Widget _healthChip(IconData icon, String label, Color color) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+      decoration: BoxDecoration(
+          color: color.withValues(alpha: .09),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: .25))),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 7),
+        Text(label, style: TextStyle(color: color, fontSize: 11))
+      ]));
 }
 
 class GraphPainter extends CustomPainter {

@@ -12,8 +12,10 @@
 - [Shipped] Reproducible model snapshots attached to saved simulation runs
 - [Shipped] Direct drag-to-arrange editing on the dependency canvas
 - [Shipped] Versioned JSON copy/import with validation
+- [Shipped] Complete workspace backup and restore
+- [Shipped] Graph cycle and connectivity diagnostics
 - Rich typed relationships: supply, capacity, demand, budget, timing
-- Validate graph cycles and user-defined impact rules
+- [Shipped] Validate graph cycles and connectivity
 - SQLite versioned model and migrations
 - Import CSV/Excel with data validation
 
@@ -29,7 +31,7 @@
 - Timeline animation and Sankey/path explanations
 - Interactive dependency editor and node inspector
 - Local encrypted data vault / user access controls
-- Guided onboarding and real samples
+- [Shipped] Guided onboarding and demonstration sample
 
 ## Phase 5 — optional intelligence
 - Optional Ollama local LLM for plain-language scenario reports
@@ -41,6 +43,6 @@
 - Windows installer, signed builds, update mechanism
 - Cross-platform builds, portable project archives
 - Optional self-hosted collaboration, audit logs and role controls
-- Performance benchmarks and automated CI builds
+- [Shipped] Automated CI builds and portable Windows artifact
 
 The application is a demonstrator: do not imply quantitative validity without calibration and validation.
