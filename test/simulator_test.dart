@@ -184,4 +184,46 @@ void main() {
     expect(diagnostics.cycleCount, 1);
     expect(diagnostics.disconnectedNodeIds, ['c']);
   });
+
+  test('sensitivity analysis ranks all five stress drivers', () {
+    final impacts = Simulator.sensitivity(Scenario());
+
+    expect(impacts, hasLength(5));
+    expect(impacts.map((impact) => impact.driver).toSet(), hasLength(5));
+    expect(impacts.first.costChange,
+        greaterThanOrEqualTo(impacts.last.costChange));
+    expect(impacts.every((impact) => impact.costChange >= 0), isTrue);
+  });
+
+  test('model CSV round-trips quoted spreadsheet values', () {
+    final model = OperationalModel(const [
+      MirrorNode('quoted', 'Supply, "critical"', 'Supply', 1200, .2, .3, .4),
+      MirrorNode('target', 'Target', 'Operations', 800, .1, .6, .7),
+    ], const [
+      MirrorEdge('quoted', 'target', .75)
+    ]);
+
+    final decoded = ModelCsvCodec.decode(ModelCsvCodec.encode(model));
+
+    expect(decoded.nodes.first.label, 'Supply, "critical"');
+    expect(decoded.edges.single.strength, .75);
+  });
+
+  test('large operational graph simulation completes within performance budget',
+      () async {
+    final largeNodes = List.generate(
+        500,
+        (index) => MirrorNode('node_$index', 'System $index', 'Operations',
+            1000 + index.toDouble(), .1, .5, .5));
+    final largeEdges = List.generate(
+        499, (index) => MirrorEdge('node_$index', 'node_${index + 1}', .5));
+    final stopwatch = Stopwatch()..start();
+
+    final result = await Simulator.run(Scenario(),
+        modelNodes: largeNodes, modelEdges: largeEdges);
+    stopwatch.stop();
+
+    expect(result.impacts, hasLength(500));
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 5)));
+  });
 }

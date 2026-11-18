@@ -17,12 +17,13 @@
 - Rich typed relationships: supply, capacity, demand, budget, timing
 - [Shipped] Validate graph cycles and connectivity
 - SQLite versioned model and migrations
-- Import CSV/Excel with data validation
+- [Shipped] Import and export spreadsheet-compatible CSV with validation
 
 ## Phase 3 — serious simulation
 - Calibrated exposure models; assumption provenance
 - Monte Carlo distributions with repeatable random seeds
-- Sensitivity analysis and uncertainty bounds
+- [Shipped] One-at-a-time sensitivity analysis
+- Uncertainty bounds and confidence intervals
 - Resource scheduling and discrete-event modeling
 - Backtesting predictions against observed outcomes
 
@@ -44,5 +45,6 @@
 - Cross-platform builds, portable project archives
 - Optional self-hosted collaboration, audit logs and role controls
 - [Shipped] Automated CI builds and portable Windows artifact
+- [Shipped] Performance regression coverage for large graphs
 
 The application is a demonstrator: do not imply quantitative validity without calibration and validation.

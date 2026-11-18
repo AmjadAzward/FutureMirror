@@ -412,6 +412,36 @@ class _HomeState extends State<Home> {
         content: Text('Operational model JSON copied to the clipboard.')));
   }
 
+  Future<void> _copyModelCsv() async {
+    final source = ModelCsvCodec.encode(OperationalModel(modelNodes, modelEdges));
+    await Clipboard.setData(ClipboardData(text: source));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Spreadsheet-compatible model CSV copied.')));
+  }
+
+  Future<void> _importModelCsv() async {
+    final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted) return;
+    try {
+      final imported = ModelCsvCodec.decode(clipboard?.text ?? '');
+      setState(() {
+        modelNodes = imported.nodes;
+        modelEdges = imported.edges;
+        selectedNode = null;
+      });
+      await _persistModel();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Imported CSV with ${imported.nodes.length} systems and ${imported.edges.length} dependencies.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('CSV import failed: $error')));
+    }
+  }
+
   Future<void> _importModelJson() async {
     final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
     if (!mounted) return;
@@ -814,6 +844,10 @@ class _HomeState extends State<Home> {
           _card(Column(
               children:
                   result!.impacts.take(6).map((i) => _impactRow(i)).toList())),
+        const SizedBox(height: 26),
+        _section('Sensitivity analysis',
+            'Estimated change from adding 10 percentage points to one stress driver at a time'),
+        _sensitivityCard(),
         const SizedBox(height: 24),
         _card(const Row(children: [
           Icon(Icons.info_outline, color: amber),
@@ -824,6 +858,50 @@ class _HomeState extends State<Home> {
                   style: TextStyle(color: muted, fontSize: 12)))
         ]))
       ]);
+
+  Widget _sensitivityCard() {
+    final impacts = Simulator.sensitivity(scenario,
+        modelNodes: modelNodes, modelEdges: modelEdges);
+    final largest = impacts.fold<double>(
+        0, (value, impact) => max(value, impact.costChange));
+    return _card(Column(
+        children: impacts
+            .map((impact) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Row(children: [
+                  SizedBox(
+                      width: 120,
+                      child: Text(impact.driver,
+                          style: const TextStyle(fontSize: 12))),
+                  Expanded(
+                      child: ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: LinearProgressIndicator(
+                              minHeight: 8,
+                              value: largest == 0
+                                  ? 0
+                                  : impact.costChange / largest,
+                              backgroundColor: line,
+                              color: purple))),
+                  const SizedBox(width: 14),
+                  SizedBox(
+                      width: 100,
+                      child: Text('+${money(impact.costChange)}',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                              color: cyan,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700))),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                      width: 72,
+                      child: Text(
+                          '+${(impact.riskChange * 100).toStringAsFixed(1)}% risk',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(color: muted, fontSize: 10)))
+                ])))
+            .toList()));
+  }
   Widget _hero(bool compact) => Container(
       width: double.infinity,
       padding: const EdgeInsets.all(27),
@@ -1297,6 +1375,14 @@ class _HomeState extends State<Home> {
             onPressed: _copyModelJson,
             icon: const Icon(Icons.copy_all_outlined),
             label: const Text('Copy JSON')),
+        OutlinedButton.icon(
+            onPressed: _importModelCsv,
+            icon: const Icon(Icons.table_view_outlined),
+            label: const Text('Import CSV')),
+        OutlinedButton.icon(
+            onPressed: _copyModelCsv,
+            icon: const Icon(Icons.content_copy_outlined),
+            label: const Text('Copy CSV')),
         OutlinedButton.icon(
             onPressed: _resetModel,
             icon: const Icon(Icons.restart_alt),

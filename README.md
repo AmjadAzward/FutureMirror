@@ -27,9 +27,11 @@ FutureMirror is a native Windows laboratory for constructing disruption scenario
 | Reality map | Inspect relationships and drag systems to arrange the graph |
 | Model editor | Add, edit, remove, copy, and import systems and weighted directional dependencies |
 | Decision dashboard | Review illustrative cost, risk, delay, and affected-system indicators |
+| Sensitivity analysis | Rank the marginal effect of each scenario stress driver |
 | Comparison | Pin one result and compare it with another saved scenario |
 | Local history | Save, load, compare, and remove simulation runs on the current computer |
 | Workspace portability | Copy and restore the complete model and run history as validated JSON |
+| Spreadsheet exchange | Copy or import the operational graph as CSV for Excel-compatible editing |
 | Data export | Write the active scenario and ranked impacts to a portable CSV report |
 | Transparent model | Review assumptions, limitations, and the active execution engine |
 
@@ -74,6 +76,7 @@ The optional Rust executable is launched as a local child process. No network so
 - Versioned JSON model exchange through the system clipboard
 - Complete versioned workspace backup and restore through the clipboard
 - Live graph diagnostics for feedback loops, disconnected systems, sources, and sinks
+- One-at-a-time sensitivity analysis for all five scenario drivers
 - Reproducible saved runs containing the exact operational-model snapshot used at execution time
 
 > [!IMPORTANT]

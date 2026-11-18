@@ -19,6 +19,7 @@ void main() {
     expect(find.text('START HERE'), findsOneWidget);
     expect(find.text('Open Scenario Lab'), findsWidgets);
     expect(find.text('Modeled cost impact'), findsOneWidget);
+    expect(find.text('Sensitivity analysis'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -37,6 +38,8 @@ void main() {
     expect(find.text('Operational model'), findsWidgets);
     expect(find.text('Systems'), findsOneWidget);
     expect(find.text('Dependencies'), findsOneWidget);
+    expect(find.text('Import CSV'), findsOneWidget);
+    expect(find.text('Copy CSV'), findsOneWidget);
     expect(find.textContaining('feedback loop'), findsOneWidget);
     expect(find.textContaining('disconnected'), findsOneWidget);
     expect(tester.takeException(), isNull);

@@ -8,6 +8,9 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- One-at-a-time sensitivity analysis with cost and risk deltas
+- Automated performance coverage for operational graphs with 500 systems
+- Spreadsheet-compatible operational-model CSV copy and import
 - Complete workspace backup and restore with schema validation
 - Live model-health diagnostics for cycles, disconnected nodes, sources, and sinks
 - First-use workflow guidance on the command center

@@ -168,6 +168,13 @@ class SimulationResult {
       };
 }
 
+class SensitivityImpact {
+  final String driver;
+  final double costChange;
+  final double riskChange;
+  const SensitivityImpact(this.driver, this.costChange, this.riskChange);
+}
+
 class Simulator {
   static List<String> get _engineCandidates {
     final executableDirectory = File(Platform.resolvedExecutable).parent.path;
@@ -231,6 +238,36 @@ class Simulator {
           0, 'Native engine unavailable; Dart fallback used: $nativeFailure');
     }
     return fallback;
+  }
+
+  static List<SensitivityImpact> sensitivity(Scenario scenario,
+      {List<MirrorNode>? modelNodes, List<MirrorEdge>? modelEdges}) {
+    final activeNodes = modelNodes ?? nodes;
+    final activeEdges = modelEdges ?? edges;
+    final baseline = _runInDart(scenario, activeNodes, activeEdges);
+    final drivers = <(String, void Function(Scenario))>[
+      ('Staff absence',
+          (s) => s.staffAbsence = (s.staffAbsence + .1).clamp(0.0, 1.0)),
+      ('Supplier delay',
+          (s) => s.supplierDelay = (s.supplierDelay + .1).clamp(0.0, 1.0)),
+      ('Demand spike',
+          (s) => s.demandSpike = (s.demandSpike + .1).clamp(0.0, 1.0)),
+      ('IT outage',
+          (s) => s.itOutage = (s.itOutage + .1).clamp(0.0, 1.0)),
+      ('Cash pressure',
+          (s) => s.cashPressure = (s.cashPressure + .1).clamp(0.0, 1.0)),
+    ];
+    final impacts = drivers.map((driver) {
+      final changed = scenario.copy();
+      driver.$2(changed);
+      final result = _runInDart(changed, activeNodes, activeEdges);
+      return SensitivityImpact(
+          driver.$1,
+          max(0.0, result.totalExtraCost - baseline.totalExtraCost),
+          max(0.0, result.avgProjectedRisk - baseline.avgProjectedRisk));
+    }).toList();
+    impacts.sort((a, b) => b.costChange.compareTo(a.costChange));
+    return impacts;
   }
 
   static SimulationResult _runInDart(
@@ -527,6 +564,134 @@ class WorkspaceArchive {
       throw const FormatException('A workspace can contain at most 80 runs.');
     }
     return WorkspaceArchive(model, runs);
+  }
+}
+
+class ModelCsvCodec {
+  static const _header = [
+    'recordType',
+    'id',
+    'label',
+    'category',
+    'baselineCost',
+    'baselineRisk',
+    'x',
+    'y',
+    'from',
+    'to',
+    'strength'
+  ];
+
+  static String encode(OperationalModel model) {
+    String cell(Object? value) =>
+        '"${(value ?? '').toString().replaceAll('"', '""')}"';
+    final rows = <List<Object?>>[
+      _header,
+      ...model.nodes.map((node) => [
+            'node',
+            node.id,
+            node.label,
+            node.category,
+            node.baselineCost,
+            node.baselineRisk,
+            node.x,
+            node.y,
+            '',
+            '',
+            ''
+          ]),
+      ...model.edges.map((edge) => [
+            'edge',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            edge.from,
+            edge.to,
+            edge.strength
+          ])
+    ];
+    return '${rows.map((row) => row.map(cell).join(',')).join('\r\n')}\r\n';
+  }
+
+  static OperationalModel decode(String source) {
+    final rows = _parse(source);
+    if (rows.isEmpty || rows.first.length != _header.length) {
+      throw const FormatException('The model CSV header is missing.');
+    }
+    for (var index = 0; index < _header.length; index++) {
+      if (rows.first[index] != _header[index]) {
+        throw FormatException('Expected CSV column "${_header[index]}".');
+      }
+    }
+    final loadedNodes = <MirrorNode>[];
+    final loadedEdges = <MirrorEdge>[];
+    for (final row in rows.skip(1)) {
+      if (row.every((value) => value.trim().isEmpty)) continue;
+      if (row.length != _header.length) {
+        throw const FormatException('Every CSV row must have 11 columns.');
+      }
+      if (row[0] == 'node') {
+        loadedNodes.add(MirrorNode(
+            row[1],
+            row[2],
+            row[3],
+            double.parse(row[4]),
+            double.parse(row[5]),
+            double.parse(row[6]),
+            double.parse(row[7])));
+      } else if (row[0] == 'edge') {
+        loadedEdges.add(MirrorEdge(row[8], row[9], double.parse(row[10])));
+      } else {
+        throw FormatException('Unknown CSV record type "${row[0]}".');
+      }
+    }
+    return OperationalModel.fromJson({
+      'nodes': loadedNodes.map((node) => node.toJson()).toList(),
+      'edges': loadedEdges.map((edge) => edge.toJson()).toList()
+    });
+  }
+
+  static List<List<String>> _parse(String source) {
+    final rows = <List<String>>[];
+    var row = <String>[];
+    var value = StringBuffer();
+    var quoted = false;
+    for (var index = 0; index < source.length; index++) {
+      final character = source[index];
+      if (character == '"') {
+        if (quoted && index + 1 < source.length && source[index + 1] == '"') {
+          value.write('"');
+          index++;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (character == ',' && !quoted) {
+        row.add(value.toString());
+        value = StringBuffer();
+      } else if ((character == '\n' || character == '\r') && !quoted) {
+        if (character == '\r' &&
+            index + 1 < source.length &&
+            source[index + 1] == '\n') {
+          index++;
+        }
+        row.add(value.toString());
+        value = StringBuffer();
+        rows.add(row);
+        row = <String>[];
+      } else {
+        value.write(character);
+      }
+    }
+    if (quoted) throw const FormatException('Unclosed quoted CSV value.');
+    if (value.isNotEmpty || row.isNotEmpty) {
+      row.add(value.toString());
+      rows.add(row);
+    }
+    return rows;
   }
 }
 
