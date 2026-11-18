@@ -19,4 +19,22 @@ void main() {
     expect(find.text('Modeled cost impact'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('model editor opens and renders the persisted graph',
+      (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const FutureMirrorApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Model editor'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Operational model'), findsWidgets);
+    expect(find.text('Systems'), findsOneWidget);
+    expect(find.text('Dependencies'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

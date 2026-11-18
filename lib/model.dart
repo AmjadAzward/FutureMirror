@@ -39,6 +39,29 @@ class MirrorNode {
   final double baselineCost, baselineRisk, x, y;
   const MirrorNode(this.id, this.label, this.category, this.baselineCost,
       this.baselineRisk, this.x, this.y);
+  factory MirrorNode.fromJson(Map<String, dynamic> json) => MirrorNode(
+      json['id'],
+      json['label'],
+      json['category'],
+      (json['baselineCost'] as num).toDouble(),
+      (json['baselineRisk'] as num).toDouble(),
+      (json['x'] as num).toDouble(),
+      (json['y'] as num).toDouble());
+  MirrorNode copyWith(
+          {String? label,
+          String? category,
+          double? baselineCost,
+          double? baselineRisk,
+          double? x,
+          double? y}) =>
+      MirrorNode(
+          id,
+          label ?? this.label,
+          category ?? this.category,
+          baselineCost ?? this.baselineCost,
+          baselineRisk ?? this.baselineRisk,
+          x ?? this.x,
+          y ?? this.y);
   Map<String, dynamic> toJson() => {
         'id': id,
         'label': label,
@@ -54,6 +77,8 @@ class MirrorEdge {
   final String from, to;
   final double strength;
   const MirrorEdge(this.from, this.to, this.strength);
+  factory MirrorEdge.fromJson(Map<String, dynamic> json) => MirrorEdge(
+      json['from'], json['to'], (json['strength'] as num).toDouble());
   Map<String, dynamic> toJson() =>
       {'from': from, 'to': to, 'strength': strength};
 }
@@ -158,11 +183,18 @@ class Simulator {
     }.toList();
   }
 
-  static Future<SimulationResult> run(Scenario s) async {
+  static Future<SimulationResult> run(Scenario s,
+      {List<MirrorNode>? modelNodes, List<MirrorEdge>? modelEdges}) async {
+    final activeNodes = modelNodes ?? nodes;
+    final activeEdges = modelEdges ?? edges;
+    if (activeNodes.isEmpty) {
+      throw ArgumentError(
+          'The operational model must contain at least one system.');
+    }
     final payload = jsonEncode({
       'scenario': s.toJson(),
-      'nodes': nodes.map((e) => e.toJson()).toList(),
-      'edges': edges.map((e) => e.toJson()).toList()
+      'nodes': activeNodes.map((e) => e.toJson()).toList(),
+      'edges': activeEdges.map((e) => e.toJson()).toList()
     });
     String? nativeFailure;
     try {
@@ -193,7 +225,7 @@ class Simulator {
     } catch (error) {
       nativeFailure = error.toString();
     }
-    final fallback = _runInDart(s);
+    final fallback = _runInDart(s, activeNodes, activeEdges);
     if (nativeFailure != null) {
       fallback.warnings.insert(
           0, 'Native engine unavailable; Dart fallback used: $nativeFailure');
@@ -201,7 +233,8 @@ class Simulator {
     return fallback;
   }
 
-  static SimulationResult _runInDart(Scenario s) {
+  static SimulationResult _runInDart(
+      Scenario s, List<MirrorNode> activeNodes, List<MirrorEdge> activeEdges) {
     final signals = [
       s.staffAbsence,
       s.supplierDelay,
@@ -224,13 +257,15 @@ class Simulator {
       'IT interruption',
       'Cash constraint'
     ];
-    final reasons = List.generate(nodes.length, (_) => <String>[]);
-    final direct = List<double>.filled(nodes.length, 0);
-    for (var i = 0; i < nodes.length; i++) {
+    final reasons = List.generate(activeNodes.length, (_) => <String>[]);
+    final direct = List<double>.filled(activeNodes.length, 0);
+    for (var i = 0; i < activeNodes.length; i++) {
       var survival = 1.0;
       for (var j = 0; j < 5; j++) {
+        final categoryExposure =
+            exposure[activeNodes[i].category] ?? exposure['Operations']!;
         final contribution =
-            signals[j].clamp(0.0, 1.0) * exposure[nodes[i].category]![j] * .64;
+            signals[j].clamp(0.0, 1.0) * categoryExposure[j] * .64;
         survival *= 1 - contribution;
         if (contribution >= .095) reasons[i].add(labels[j]);
       }
@@ -239,9 +274,9 @@ class Simulator {
     var scores = List<double>.of(direct);
     for (var cycle = 0; cycle < 5; cycle++) {
       final next = List<double>.of(direct);
-      for (final e in edges) {
-        final a = nodes.indexWhere((n) => n.id == e.from),
-            b = nodes.indexWhere((n) => n.id == e.to);
+      for (final e in activeEdges) {
+        final a = activeNodes.indexWhere((n) => n.id == e.from),
+            b = activeNodes.indexWhere((n) => n.id == e.to);
         if (a < 0 || b < 0) continue;
         final contribution = scores[a] * e.strength.clamp(0.0, 1.0) * .33;
         next[b] = 1 - (1 - next[b]) * (1 - contribution);
@@ -250,8 +285,8 @@ class Simulator {
     }
     final horizon = max(.1, s.horizonDays / 30);
     final impacts = <NodeImpact>[];
-    for (var i = 0; i < nodes.length; i++) {
-      final n = nodes[i], score = scores[i];
+    for (var i = 0; i < activeNodes.length; i++) {
+      final n = activeNodes[i], score = scores[i];
       if (score > direct[i] + .04) {
         reasons[i].add('Downstream dependency exposure');
       }
@@ -275,7 +310,7 @@ class Simulator {
     return SimulationResult(
         'Dart fallback v0.1',
         impacts.fold(0, (v, i) => v + i.extraCost),
-        impacts.fold(0.0, (v, i) => v + i.projectedRisk) / nodes.length,
+        impacts.fold(0.0, (v, i) => v + i.projectedRisk) / activeNodes.length,
         impacts.map((i) => i.delayDays).reduce(max),
         impacts.where((i) => i.score >= .12).length,
         impacts, [
@@ -347,6 +382,71 @@ class LocalStore {
     return decoded
         .map((e) => SavedRun.fromJson(Map<String, dynamic>.from(e)))
         .toList();
+  }
+}
+
+OperationalModel _defaultOperationalModel() =>
+    OperationalModel(List.of(nodes), List.of(edges));
+
+class OperationalModel {
+  final List<MirrorNode> nodes;
+  final List<MirrorEdge> edges;
+  OperationalModel(this.nodes, this.edges);
+
+  factory OperationalModel.defaults() => _defaultOperationalModel();
+
+  factory OperationalModel.fromJson(Map<String, dynamic> json) {
+    final loadedNodes = (json['nodes'] as List)
+        .map((item) => MirrorNode.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+    if (loadedNodes.isEmpty) {
+      throw const FormatException(
+          'An operational model needs at least one system.');
+    }
+    final ids = loadedNodes.map((node) => node.id).toSet();
+    final loadedEdges = (json['edges'] as List)
+        .map((item) => MirrorEdge.fromJson(Map<String, dynamic>.from(item)))
+        .where((edge) =>
+            edge.from != edge.to &&
+            ids.contains(edge.from) &&
+            ids.contains(edge.to))
+        .toList();
+    return OperationalModel(loadedNodes, loadedEdges);
+  }
+
+  Map<String, dynamic> toJson() => {
+        'nodes': nodes.map((node) => node.toJson()).toList(),
+        'edges': edges.map((edge) => edge.toJson()).toList()
+      };
+}
+
+class OperationalModelStore {
+  static File get file {
+    final root = Platform.environment['APPDATA'] ??
+        Platform.environment['HOME'] ??
+        Directory.current.path;
+    return File(
+        '$root${Platform.pathSeparator}FutureMirror${Platform.pathSeparator}model.json');
+  }
+
+  static Future<OperationalModel> load() async {
+    try {
+      if (!await file.exists()) return OperationalModel.defaults();
+      return OperationalModel.fromJson(
+          Map<String, dynamic>.from(jsonDecode(await file.readAsString())));
+    } catch (_) {
+      return OperationalModel.defaults();
+    }
+  }
+
+  static Future<void> save(OperationalModel model) async {
+    await file.parent.create(recursive: true);
+    final temporary = File('${file.path}.temporary');
+    await temporary.writeAsString(
+        const JsonEncoder.withIndent('  ').convert(model.toJson()),
+        flush: true);
+    if (await file.exists()) await file.delete();
+    await temporary.rename(file.path);
   }
 }
 

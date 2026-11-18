@@ -7,7 +7,8 @@
 - Local history, compare runs, evidence disclaimer
 
 ## Phase 2 — customizable reality model
-- CRUD for nodes, edges, baseline costs and risk parameters
+- [Shipped] CRUD for nodes, edges, baseline costs and risk parameters
+- [Shipped] Persistent custom operational graph with default-model reset
 - Rich typed relationships: supply, capacity, demand, budget, timing
 - Validate graph cycles and user-defined impact rules
 - SQLite versioned model and migrations

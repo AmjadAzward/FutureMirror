@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:future_mirror/model.dart';
 
@@ -59,5 +61,47 @@ void main() {
     for (final impact in result.impacts) {
       expect(csv, contains('"${impact.label}"'));
     }
+  });
+
+  test('custom operational model drives simulation output', () async {
+    const customNodes = [
+      MirrorNode('source', 'Custom source', 'People', 10000, .1, .2, .3),
+      MirrorNode('target', 'Custom target', 'Operations', 20000, .2, .7, .6),
+    ];
+    const customEdges = [MirrorEdge('source', 'target', .9)];
+
+    final result = await Simulator.run(
+        Scenario(
+            staffAbsence: .8,
+            supplierDelay: 0,
+            demandSpike: 0,
+            itOutage: 0,
+            cashPressure: 0),
+        modelNodes: customNodes,
+        modelEdges: customEdges);
+
+    expect(result.impacts, hasLength(2));
+    expect(result.impacts.map((impact) => impact.id),
+        containsAll(['source', 'target']));
+    expect(result.impacts.first.score, greaterThan(0));
+  });
+
+  test('operational model JSON filters invalid dependencies', () {
+    final source = {
+      'nodes': nodes.map((node) => node.toJson()).toList(),
+      'edges': [
+        const MirrorEdge('team', 'capacity', .8).toJson(),
+        const MirrorEdge('missing', 'team', .5).toJson(),
+        const MirrorEdge('team', 'team', .5).toJson(),
+      ]
+    };
+
+    final model = OperationalModel.fromJson(
+        Map<String, dynamic>.from(jsonDecode(jsonEncode(source))));
+
+    expect(model.nodes, hasLength(nodes.length));
+    expect(model.edges, hasLength(1));
+    expect(model.edges.single.from, 'team');
+    expect(model.edges.single.to, 'capacity');
   });
 }

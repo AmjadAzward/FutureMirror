@@ -55,6 +55,8 @@ class _HomeState extends State<Home> {
       TextEditingController(text: 'Operational Stress Test');
   SimulationResult? result, comparison;
   List<SavedRun> history = [];
+  List<MirrorNode> modelNodes = List.of(nodes);
+  List<MirrorEdge> modelEdges = List.of(edges);
   String? selectedNode;
   @override
   void initState() {
@@ -70,8 +72,13 @@ class _HomeState extends State<Home> {
 
   Future<void> _init() async {
     final loaded = await LocalStore.load();
+    final model = await OperationalModelStore.load();
     if (!mounted) return;
-    setState(() => history = loaded);
+    setState(() {
+      history = loaded;
+      modelNodes = model.nodes;
+      modelEdges = model.edges;
+    });
     await _simulate(save: false);
   }
 
@@ -79,7 +86,8 @@ class _HomeState extends State<Home> {
     if (busy) return;
     setState(() => busy = true);
     try {
-      final computed = await Simulator.run(scenario.copy());
+      final computed = await Simulator.run(scenario.copy(),
+          modelNodes: modelNodes, modelEdges: modelEdges);
       if (save) {
         history.insert(0, SavedRun(DateTime.now(), scenario.copy(), computed));
         if (history.length > 80) history = history.take(80).toList();
@@ -143,6 +151,230 @@ class _HomeState extends State<Home> {
     }
   }
 
+  Future<void> _persistModel() async {
+    await OperationalModelStore.save(OperationalModel(modelNodes, modelEdges));
+    if (mounted) await _simulate(save: false);
+  }
+
+  Future<void> _editNode([MirrorNode? existing]) async {
+    final label = TextEditingController(text: existing?.label ?? 'New system');
+    final cost = TextEditingController(
+        text: (existing?.baselineCost ?? 10000).toStringAsFixed(0));
+    final risk = TextEditingController(
+        text: ((existing?.baselineRisk ?? .10) * 100).toStringAsFixed(0));
+    const categories = [
+      'People',
+      'Supply',
+      'Technology',
+      'Finance',
+      'Customers',
+      'Operations'
+    ];
+    var category = existing?.category ?? 'Operations';
+    final accepted = await showDialog<bool>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+            builder: (context, setDialogState) => AlertDialog(
+                    title:
+                        Text(existing == null ? 'Add system' : 'Edit system'),
+                    content: SizedBox(
+                        width: 420,
+                        child:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                          TextField(
+                              controller: label,
+                              decoration:
+                                  const InputDecoration(labelText: 'Name')),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                              initialValue: category,
+                              decoration:
+                                  const InputDecoration(labelText: 'Category'),
+                              items: categories
+                                  .map((value) => DropdownMenuItem(
+                                      value: value, child: Text(value)))
+                                  .toList(),
+                              onChanged: (value) => setDialogState(
+                                  () => category = value ?? category)),
+                          const SizedBox(height: 12),
+                          TextField(
+                              controller: cost,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                  labelText: 'Baseline monthly cost (USD)')),
+                          const SizedBox(height: 12),
+                          TextField(
+                              controller: risk,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                  labelText: 'Baseline risk (0–100%)'))
+                        ])),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel')),
+                      FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Save'))
+                    ])));
+    if (accepted == true && mounted && label.text.trim().isNotEmpty) {
+      final parsedCost = double.tryParse(cost.text) ?? 10000;
+      final parsedRisk = (double.tryParse(risk.text) ?? 10) / 100;
+      setState(() {
+        if (existing == null) {
+          final index = modelNodes.length;
+          modelNodes = [
+            ...modelNodes,
+            MirrorNode(
+                'custom_${DateTime.now().microsecondsSinceEpoch}',
+                label.text.trim(),
+                category,
+                parsedCost.clamp(0, 100000000).toDouble(),
+                parsedRisk.clamp(0, 1).toDouble(),
+                .15 + ((index * .23) % .70),
+                .18 + ((index * .31) % .64))
+          ];
+        } else {
+          modelNodes = modelNodes
+              .map((node) => node.id == existing.id
+                  ? existing.copyWith(
+                      label: label.text.trim(),
+                      category: category,
+                      baselineCost: parsedCost.clamp(0, 100000000).toDouble(),
+                      baselineRisk: parsedRisk.clamp(0, 1).toDouble())
+                  : node)
+              .toList();
+        }
+      });
+      await _persistModel();
+    }
+    label.dispose();
+    cost.dispose();
+    risk.dispose();
+  }
+
+  Future<void> _deleteNode(MirrorNode node) async {
+    if (modelNodes.length == 1) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('The model needs at least one system.')));
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+                title: const Text('Delete system?'),
+                content:
+                    Text('Delete "${node.label}" and all of its dependencies?'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Delete'))
+                ]));
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      modelNodes = modelNodes.where((item) => item.id != node.id).toList();
+      modelEdges = modelEdges
+          .where((edge) => edge.from != node.id && edge.to != node.id)
+          .toList();
+      if (selectedNode == node.id) selectedNode = null;
+    });
+    await _persistModel();
+  }
+
+  Future<void> _addEdge() async {
+    if (modelNodes.length < 2) return;
+    var from = modelNodes.first.id;
+    var to = modelNodes[1].id;
+    var strength = .50;
+    final accepted = await showDialog<bool>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+            builder: (context, setDialogState) => AlertDialog(
+                    title: const Text('Add dependency'),
+                    content: SizedBox(
+                        width: 420,
+                        child:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                          DropdownButtonFormField<String>(
+                              initialValue: from,
+                              decoration:
+                                  const InputDecoration(labelText: 'Source'),
+                              items: modelNodes
+                                  .map((node) => DropdownMenuItem(
+                                      value: node.id, child: Text(node.label)))
+                                  .toList(),
+                              onChanged: (value) =>
+                                  setDialogState(() => from = value ?? from)),
+                          const SizedBox(height: 12),
+                          DropdownButtonFormField<String>(
+                              initialValue: to,
+                              decoration:
+                                  const InputDecoration(labelText: 'Target'),
+                              items: modelNodes
+                                  .map((node) => DropdownMenuItem(
+                                      value: node.id, child: Text(node.label)))
+                                  .toList(),
+                              onChanged: (value) =>
+                                  setDialogState(() => to = value ?? to)),
+                          const SizedBox(height: 18),
+                          Row(children: [
+                            const Text('Strength'),
+                            Expanded(
+                                child: Slider(
+                                    value: strength,
+                                    onChanged: (value) => setDialogState(
+                                        () => strength = value))),
+                            Text('${(strength * 100).round()}%')
+                          ])
+                        ])),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel')),
+                      FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Add'))
+                    ])));
+    if (accepted != true || !mounted) return;
+    if (from == to ||
+        modelEdges.any((edge) => edge.from == from && edge.to == to)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Choose two different systems and avoid duplicates.')));
+      return;
+    }
+    setState(
+        () => modelEdges = [...modelEdges, MirrorEdge(from, to, strength)]);
+    await _persistModel();
+  }
+
+  Future<void> _resetModel() async {
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+                title: const Text('Reset operational model?'),
+                content: const Text(
+                    'Replace all custom systems and dependencies with the demonstration model?'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Reset'))
+                ]));
+    if (confirmed != true || !mounted) return;
+    final defaults = OperationalModel.defaults();
+    setState(() {
+      modelNodes = defaults.nodes;
+      modelEdges = defaults.edges;
+      selectedNode = null;
+    });
+    await _persistModel();
+  }
+
   void update(void Function() fn) {
     setState(fn);
   }
@@ -180,6 +412,7 @@ class _HomeState extends State<Home> {
                 (Icons.hub_outlined, 'Reality map'),
                 (Icons.compare_arrows, 'Compare'),
                 (Icons.history, 'Run history'),
+                (Icons.account_tree_outlined, 'Model editor'),
                 (Icons.verified_user_outlined, 'Evidence & model')
               ]
                   .asMap()
@@ -223,6 +456,7 @@ class _HomeState extends State<Home> {
                             'Reality map',
                             'Scenario comparison',
                             'Execution history',
+                            'Operational model',
                             'Evidence & limitations'
                           ][page],
                           style: const TextStyle(
@@ -302,6 +536,7 @@ class _HomeState extends State<Home> {
         2 => _mapPage(compact),
         3 => _compare(compact),
         4 => _history(),
+        5 => _modelEditor(),
         _ => _evidence()
       };
   Widget _section(String title, String detail, {Widget? action}) => Padding(
@@ -376,7 +611,9 @@ class _HomeState extends State<Home> {
                       red),
                   _metric(
                       'Systems affected',
-                      r == null ? '—' : '${r.affectedCount} / ${nodes.length}',
+                      r == null
+                          ? '—'
+                          : '${r.affectedCount} / ${modelNodes.length}',
                       'Impact score ≥ 12%',
                       Icons.hub_outlined,
                       purple)
@@ -629,7 +866,7 @@ class _HomeState extends State<Home> {
                             y = e.localPosition.dy / c.maxHeight;
                         MirrorNode? closest;
                         double dist = 999;
-                        for (final n in nodes) {
+                        for (final n in modelNodes) {
                           final d = pow((n.x - x) * c.maxWidth, 2) +
                               pow((n.y - y) * c.maxHeight, 2);
                           if (d < dist) {
@@ -642,7 +879,8 @@ class _HomeState extends State<Home> {
                         }
                       },
                       child: CustomPaint(
-                          painter: GraphPainter(result, selectedNode),
+                          painter: GraphPainter(
+                              result, selectedNode, modelNodes, modelEdges),
                           child: const SizedBox.expand())))),
           const SizedBox(height: 8),
           const Text(
@@ -727,7 +965,10 @@ class _HomeState extends State<Home> {
         if (comparison != null && result != null)
           _card(Column(
               children: result!.impacts.map((i) {
-            final before = comparison!.impacts.firstWhere((n) => n.id == i.id);
+            final matches =
+                comparison!.impacts.where((before) => before.id == i.id);
+            if (matches.isEmpty) return const SizedBox.shrink();
+            final before = matches.first;
             return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 9),
                 child: Row(children: [
@@ -813,6 +1054,82 @@ class _HomeState extends State<Home> {
                     ]));
           }).toList()))
       ]);
+  Widget _modelEditor() {
+    final labels = {for (final node in modelNodes) node.id: node.label};
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _section('Operational model',
+          'Customize the systems and directional dependencies used by every new simulation',
+          action: Wrap(spacing: 8, children: [
+            OutlinedButton.icon(
+                onPressed: _resetModel,
+                icon: const Icon(Icons.restart_alt),
+                label: const Text('Reset defaults')),
+            FilledButton.icon(
+                onPressed: () => _editNode(),
+                icon: const Icon(Icons.add),
+                label: const Text('Add system'))
+          ])),
+      _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Expanded(
+              child: Text('Systems',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+          Text('${modelNodes.length} total',
+              style: const TextStyle(color: muted, fontSize: 12))
+        ]),
+        const SizedBox(height: 8),
+        ...modelNodes.map((node) => ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.hexagon_outlined, color: cyan),
+            title: Text(node.label),
+            subtitle: Text(
+                '${node.category}  •  ${money(node.baselineCost)} baseline  •  ${(node.baselineRisk * 100).round()}% risk',
+                style: const TextStyle(color: muted, fontSize: 11)),
+            trailing: Wrap(spacing: 4, children: [
+              IconButton(
+                  tooltip: 'Edit system',
+                  onPressed: () => _editNode(node),
+                  icon: const Icon(Icons.edit_outlined, size: 18)),
+              IconButton(
+                  tooltip: 'Delete system',
+                  onPressed: () => _deleteNode(node),
+                  icon: const Icon(Icons.delete_outline, size: 18, color: red))
+            ])))
+      ])),
+      const SizedBox(height: 18),
+      _section('Dependencies',
+          'Pressure travels from the source system to the target system',
+          action: FilledButton.icon(
+              onPressed: modelNodes.length < 2 ? null : _addEdge,
+              icon: const Icon(Icons.add_link),
+              label: const Text('Add dependency'))),
+      _card(modelEdges.isEmpty
+          ? const Text(
+              'No dependencies yet. Direct scenario exposure will still be calculated.')
+          : Column(
+              children: modelEdges
+                  .map((edge) => ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.arrow_forward, color: purple),
+                      title: Text(
+                          '${labels[edge.from] ?? edge.from} → ${labels[edge.to] ?? edge.to}'),
+                      subtitle: Text(
+                          '${(edge.strength * 100).round()}% relationship strength',
+                          style: const TextStyle(color: muted, fontSize: 11)),
+                      trailing: IconButton(
+                          tooltip: 'Delete dependency',
+                          onPressed: () async {
+                            setState(() => modelEdges = modelEdges
+                                .where((item) => !identical(item, edge))
+                                .toList());
+                            await _persistModel();
+                          },
+                          icon: const Icon(Icons.delete_outline,
+                              size: 18, color: red))))
+                  .toList()))
+    ]);
+  }
+
   Widget _evidence() =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _section('Model transparency',
@@ -828,7 +1145,7 @@ class _HomeState extends State<Home> {
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
               SizedBox(height: 12),
               Text(
-                  'FutureMirror currently uses eight fictional example systems, eleven directed dependencies, invented baseline USD costs, illustrative risk baselines and hand-authored sensitivity coefficients. The output is not validated against real organizations.',
+                  'FutureMirror uses a locally configurable operational graph with user-defined systems, dependencies, baseline costs and risk values. Scenario sensitivity coefficients remain illustrative and hand-authored. The output is not validated against real organizations.',
                   style: TextStyle(color: muted, height: 1.7)),
               SizedBox(height: 20),
               Divider(),
@@ -865,7 +1182,9 @@ class _HomeState extends State<Home> {
 class GraphPainter extends CustomPainter {
   final SimulationResult? result;
   final String? selected;
-  GraphPainter(this.result, this.selected);
+  final List<MirrorNode> nodes;
+  final List<MirrorEdge> edges;
+  GraphPainter(this.result, this.selected, this.nodes, this.edges);
   @override
   void paint(Canvas canvas, Size size) {
     final nodeMap = {for (final n in nodes) n.id: n};
@@ -942,5 +1261,8 @@ class GraphPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant GraphPainter old) =>
-      old.result != result || old.selected != selected;
+      old.result != result ||
+      old.selected != selected ||
+      old.nodes != nodes ||
+      old.edges != edges;
 }

@@ -8,6 +8,9 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Persistent operational-model editor for systems, categories, costs, risks, and dependencies
+- Add, edit, delete, validate, and reset workflows for the operational graph
+- Custom-model simulation and model-validation test coverage
 - CSV export for the active scenario and its ranked system impacts
 - Automatic Windows analysis, test, Rust test, and release-build workflow
 - Undo action after deleting a saved simulation
