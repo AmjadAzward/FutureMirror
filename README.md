@@ -9,6 +9,7 @@
 [![Rust](https://img.shields.io/badge/Rust-Native_Engine-F97316?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Windows](https://img.shields.io/badge/Windows-Desktop-7C3AED?style=for-the-badge&logo=windows11&logoColor=white)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/License-MIT-10B981?style=for-the-badge)](LICENSE)
+[![Windows CI](https://img.shields.io/github/actions/workflow/status/AmjadAzward/FutureMirror/windows-ci.yml?branch=main&style=for-the-badge&label=Windows%20CI)](https://github.com/AmjadAzward/FutureMirror/actions/workflows/windows-ci.yml)
 
 **Explore operational ripple effects before making a decision.**
 
@@ -27,6 +28,7 @@ FutureMirror is a native Windows laboratory for constructing disruption scenario
 | Decision dashboard | Review illustrative cost, risk, delay, and affected-system indicators |
 | Comparison | Pin one result and compare it with another saved scenario |
 | Local history | Save, load, compare, and remove simulation runs on the current computer |
+| Data export | Write the active scenario and ranked impacts to a portable CSV report |
 | Transparent model | Review assumptions, limitations, and the active execution engine |
 
 ## Visual identity
@@ -171,7 +173,7 @@ FutureMirror v0.1 includes:
 - No external API calls
 - No monthly service dependency
 
-Saved simulations are stored as unencrypted JSON on the current computer. Avoid entering sensitive organizational information on a shared device.
+Saved simulations are stored as unencrypted JSON on the current computer. Writes use a temporary file and retain a backup of the previous valid history. Avoid entering sensitive organizational information on a shared device.
 
 ## Roadmap
 

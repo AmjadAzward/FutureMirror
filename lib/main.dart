@@ -112,8 +112,35 @@ class _HomeState extends State<Home> {
                       child: const Text('Delete'))
                 ]));
     if (confirmed != true || !mounted) return;
+    final removed = history[index];
     setState(() => history.removeAt(index));
     await LocalStore.save(history);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Saved run deleted.'),
+        action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () {
+              setState(
+                  () => history.insert(min(index, history.length), removed));
+              LocalStore.save(history);
+            })));
+  }
+
+  Future<void> _exportCurrent() async {
+    final current = result;
+    if (current == null) return;
+    try {
+      final file = await SimulationExporter.saveCsv(
+          SavedRun(DateTime.now(), scenario.copy(), current));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('CSV exported to ${file.path}')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Export failed: $error')));
+    }
   }
 
   void update(void Function() fn) {
@@ -555,7 +582,11 @@ class _HomeState extends State<Home> {
                           page = 3;
                         }),
                 icon: const Icon(Icons.compare_arrows),
-                label: const Text('Pin for comparison'))
+                label: const Text('Pin for comparison')),
+            OutlinedButton.icon(
+                onPressed: result == null ? null : _exportCurrent,
+                icon: const Icon(Icons.download_outlined),
+                label: const Text('Export CSV'))
           ])
         ])),
         const SizedBox(height: 22),

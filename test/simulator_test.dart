@@ -24,4 +24,40 @@ void main() {
     expect(result.totalExtraCost, greaterThan(0));
     expect(result.impacts.first.score, greaterThan(0));
   });
+
+  test('longer horizons increase cost and delay without changing impact score',
+      () async {
+    final short = await Simulator.run(Scenario(horizonDays: 7));
+    final long = await Simulator.run(Scenario(horizonDays: 90));
+
+    expect(long.totalExtraCost, greaterThan(short.totalExtraCost));
+    expect(long.maxDelayDays, greaterThan(short.maxDelayDays));
+    expect(long.impacts.first.score, short.impacts.first.score);
+  });
+
+  test('saved history JSON round-trips without losing scenario data', () async {
+    final scenario = Scenario(name: 'Supply, demand "stress"', horizonDays: 90);
+    final result = await Simulator.run(scenario);
+    final original = SavedRun(DateTime.utc(2026, 11, 18), scenario, result);
+
+    final decoded = LocalStore.decode(LocalStore.encode([original]));
+
+    expect(decoded, hasLength(1));
+    expect(decoded.single.scenario.name, scenario.name);
+    expect(decoded.single.scenario.horizonDays, 90);
+    expect(decoded.single.result.totalExtraCost, result.totalExtraCost);
+  });
+
+  test('CSV export escapes values and includes every impacted system',
+      () async {
+    final scenario = Scenario(name: 'Supply, demand "stress"');
+    final result = await Simulator.run(scenario);
+    final csv = SimulationExporter.toCsv(
+        SavedRun(DateTime.utc(2026, 11, 18), scenario, result));
+
+    expect(csv, contains('"Supply, demand ""stress"""'));
+    for (final impact in result.impacts) {
+      expect(csv, contains('"${impact.label}"'));
+    }
+  });
 }

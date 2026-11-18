@@ -144,18 +144,35 @@ class SimulationResult {
 }
 
 class Simulator {
+  static List<String> get _engineCandidates {
+    final executableDirectory = File(Platform.resolvedExecutable).parent.path;
+    final relative = [
+      'engine',
+      'target',
+      'release',
+      'futuremirror_engine${Platform.isWindows ? '.exe' : ''}'
+    ].join(Platform.pathSeparator);
+    return {
+      '${Directory.current.path}${Platform.pathSeparator}$relative',
+      '$executableDirectory${Platform.pathSeparator}$relative',
+    }.toList();
+  }
+
   static Future<SimulationResult> run(Scenario s) async {
     final payload = jsonEncode({
       'scenario': s.toJson(),
       'nodes': nodes.map((e) => e.toJson()).toList(),
       'edges': edges.map((e) => e.toJson()).toList()
     });
-    final path =
-        '${Directory.current.path}${Platform.pathSeparator}engine${Platform.pathSeparator}target${Platform.pathSeparator}release${Platform.pathSeparator}futuremirror_engine${Platform.isWindows ? '.exe' : ''}';
+    String? nativeFailure;
     try {
-      if (File(path).existsSync()) {
+      final path = _engineCandidates.firstWhere(
+        (candidate) => File(candidate).existsSync(),
+        orElse: () => '',
+      );
+      if (path.isNotEmpty) {
         final process = await Process.start(path, [],
-            workingDirectory: Directory.current.path);
+            workingDirectory: File(path).parent.path);
         process.stdin.write(payload);
         await process.stdin.close();
         final outFuture = process.stdout.transform(utf8.decoder).join();
@@ -167,11 +184,21 @@ class Simulator {
         });
         final out = await outFuture;
         final err = await errFuture;
-        if (exit != 0) throw StateError(err);
+        if (exit != 0) {
+          throw StateError(
+              exit == -1 ? 'Native engine timed out.' : err.trim());
+        }
         return SimulationResult.fromJson(jsonDecode(out));
       }
-    } catch (_) {/* deterministic Dart engine is the offline fallback */}
-    return _runInDart(s);
+    } catch (error) {
+      nativeFailure = error.toString();
+    }
+    final fallback = _runInDart(s);
+    if (nativeFailure != null) {
+      fallback.warnings.insert(
+          0, 'Native engine unavailable; Dart fallback used: $nativeFailure');
+    }
+    return fallback;
   }
 
   static SimulationResult _runInDart(Scenario s) {
@@ -284,22 +311,98 @@ class LocalStore {
   }
 
   static Future<List<SavedRun>> load() async {
-    try {
-      if (!await file.exists()) return [];
-      final json = jsonDecode(await file.readAsString()) as List;
-      return json
-          .map((e) => SavedRun.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-    } catch (_) {
-      return [];
+    for (final candidate in [file, File('${file.path}.backup')]) {
+      try {
+        if (await candidate.exists()) {
+          return decode(await candidate.readAsString());
+        }
+      } catch (_) {
+        // Try the backup before returning an empty history.
+      }
     }
+    return [];
   }
 
   static Future<void> save(List<SavedRun> runs) async {
     await file.parent.create(recursive: true);
-    await file.writeAsString(
-        const JsonEncoder.withIndent('  ')
-            .convert(runs.map((e) => e.toJson()).toList()),
-        flush: true);
+    final temporary = File('${file.path}.temporary');
+    final backup = File('${file.path}.backup');
+    await temporary.writeAsString(encode(runs), flush: true);
+    if (await file.exists()) {
+      await file.copy(backup.path);
+      await file.delete();
+    }
+    await temporary.rename(file.path);
+  }
+
+  static String encode(List<SavedRun> runs) =>
+      const JsonEncoder.withIndent('  ')
+          .convert(runs.map((e) => e.toJson()).toList());
+
+  static List<SavedRun> decode(String source) {
+    final decoded = jsonDecode(source);
+    if (decoded is! List) {
+      throw const FormatException('Saved history must be a JSON list.');
+    }
+    return decoded
+        .map((e) => SavedRun.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+}
+
+class SimulationExporter {
+  static Future<File> saveCsv(SavedRun run) async {
+    final home = Platform.environment['USERPROFILE'] ??
+        Platform.environment['HOME'] ??
+        Directory.current.path;
+    final directory = Directory(
+        '$home${Platform.pathSeparator}Documents${Platform.pathSeparator}FutureMirror Exports');
+    await directory.create(recursive: true);
+    final safeName = run.scenario.name
+        .replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+    final stamp = run.timestamp
+        .toIso8601String()
+        .replaceAll(':', '-')
+        .replaceAll('.', '-');
+    final output = File(
+        '${directory.path}${Platform.pathSeparator}${safeName.isEmpty ? 'scenario' : safeName}_$stamp.csv');
+    await output.writeAsString(toCsv(run), flush: true);
+    return output;
+  }
+
+  static String toCsv(SavedRun run) {
+    String cell(Object? value) => '"${value.toString().replaceAll('"', '""')}"';
+    final rows = <List<Object?>>[
+      ['FutureMirror scenario export'],
+      ['Scenario', run.scenario.name],
+      ['Timestamp', run.timestamp.toIso8601String()],
+      ['Horizon days', run.scenario.horizonDays],
+      ['Engine', run.result.engine],
+      ['Total extra cost', run.result.totalExtraCost],
+      ['Average projected risk', run.result.avgProjectedRisk],
+      ['Maximum delay days', run.result.maxDelayDays],
+      [],
+      [
+        'System',
+        'Category',
+        'Impact score',
+        'Projected risk',
+        'Extra cost',
+        'Delay days',
+        'Reasons'
+      ],
+      ...run.result.impacts.map((impact) => [
+            impact.label,
+            impact.category,
+            impact.score,
+            impact.projectedRisk,
+            impact.extraCost,
+            impact.delayDays,
+            impact.reasons.join('; ')
+          ])
+    ];
+    return '${rows.map((row) => row.map(cell).join(',')).join('\r\n')}\r\n';
   }
 }
