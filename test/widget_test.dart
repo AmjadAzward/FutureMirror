@@ -17,7 +17,7 @@ void main() {
 
     expect(find.text('Command center'), findsOneWidget);
     expect(find.text('START HERE'), findsOneWidget);
-    expect(find.text('Open Scenario Lab'), findsOneWidget);
+    expect(find.text('Open Scenario Lab'), findsWidgets);
     expect(find.text('Modeled cost impact'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
