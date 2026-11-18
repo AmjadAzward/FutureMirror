@@ -409,17 +409,34 @@ class OperationalModel {
           'An operational model needs at least one system.');
     }
     final ids = loadedNodes.map((node) => node.id).toSet();
+    if (ids.length != loadedNodes.length) {
+      throw const FormatException('System identifiers must be unique.');
+    }
+    if (loadedNodes.any((node) =>
+        node.id.trim().isEmpty ||
+        node.label.trim().isEmpty ||
+        node.baselineCost < 0 ||
+        node.baselineRisk < 0 ||
+        node.baselineRisk > 1)) {
+      throw const FormatException(
+          'Systems need an identifier, name, non-negative cost, and risk from 0 to 1.');
+    }
+    final relationships = <String>{};
     final loadedEdges = (json['edges'] as List)
         .map((item) => MirrorEdge.fromJson(Map<String, dynamic>.from(item)))
         .where((edge) =>
             edge.from != edge.to &&
             ids.contains(edge.from) &&
-            ids.contains(edge.to))
+            ids.contains(edge.to) &&
+            edge.strength >= 0 &&
+            edge.strength <= 1 &&
+            relationships.add('${edge.from}\u0000${edge.to}'))
         .toList();
     return OperationalModel(loadedNodes, loadedEdges);
   }
 
   Map<String, dynamic> toJson() => {
+        'schemaVersion': 1,
         'nodes': nodes.map((node) => node.toJson()).toList(),
         'edges': edges.map((edge) => edge.toJson()).toList()
       };

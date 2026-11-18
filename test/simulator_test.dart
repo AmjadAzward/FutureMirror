@@ -124,4 +124,34 @@ void main() {
     expect(model.edges.single.from, 'team');
     expect(model.edges.single.to, 'capacity');
   });
+
+  test('operational model JSON round-trips a custom graph', () {
+    final original = OperationalModel(
+        const [
+          MirrorNode('first', 'First system', 'Operations', 12500, .2, .3, .4),
+          MirrorNode('second', 'Second system', 'Finance', 8000, .1, .6, .7),
+        ],
+        const [MirrorEdge('first', 'second', .75)]);
+
+    final encoded = original.toJson();
+    final decoded = OperationalModel.fromJson(
+        Map<String, dynamic>.from(jsonDecode(jsonEncode(encoded))));
+
+    expect(encoded['schemaVersion'], 1);
+    expect(decoded.nodes.map((node) => node.label),
+        ['First system', 'Second system']);
+    expect(decoded.edges.single.strength, .75);
+  });
+
+  test('operational model JSON rejects duplicate system identifiers', () {
+    final duplicate = const MirrorNode(
+        'duplicate', 'Duplicate system', 'Operations', 1000, .1, .2, .3);
+
+    expect(
+        () => OperationalModel.fromJson({
+              'nodes': [duplicate.toJson(), duplicate.toJson()],
+              'edges': <Map<String, dynamic>>[]
+            }),
+        throwsFormatException);
+  });
 }

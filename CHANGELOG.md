@@ -8,6 +8,8 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Versioned JSON copy and import workflows for portable operational models
+- Import validation for duplicate systems, invalid values, and dependencies
 - Exact operational-model snapshots inside newly saved simulation runs
 - Drag-to-arrange system positioning on the Reality Map
 - Backward-compatible loading for history created before model snapshots

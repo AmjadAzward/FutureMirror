@@ -11,6 +11,7 @@
 - [Shipped] Persistent custom operational graph with default-model reset
 - [Shipped] Reproducible model snapshots attached to saved simulation runs
 - [Shipped] Direct drag-to-arrange editing on the dependency canvas
+- [Shipped] Versioned JSON copy/import with validation
 - Rich typed relationships: supply, capacity, demand, budget, timing
 - Validate graph cycles and user-defined impact rules
 - SQLite versioned model and migrations

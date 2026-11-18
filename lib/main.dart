@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'dart:math';
+
+import 'package:flutter/services.dart';
 // Flutter 3.50 deprecates the legacy umbrella import, but the replacement
 // package is not yet exposed as a direct SDK dependency to applications.
 // ignore: deprecated_member_use
@@ -398,6 +401,73 @@ class _HomeState extends State<Home> {
       selectedNode = null;
     });
     await _persistModel();
+  }
+
+  Future<void> _copyModelJson() async {
+    final source = const JsonEncoder.withIndent('  ')
+        .convert(OperationalModel(modelNodes, modelEdges).toJson());
+    await Clipboard.setData(ClipboardData(text: source));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Operational model JSON copied to the clipboard.')));
+  }
+
+  Future<void> _importModelJson() async {
+    final clipboard = await Clipboard.getData(Clipboard.kTextPlain);
+    if (!mounted) return;
+    final source = TextEditingController(text: clipboard?.text ?? '');
+    final accepted = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+                title: const Text('Import operational model'),
+                content: SizedBox(
+                    width: 560,
+                    child: TextField(
+                        controller: source,
+                        minLines: 10,
+                        maxLines: 16,
+                        decoration: const InputDecoration(
+                            labelText: 'Model JSON',
+                            alignLabelWithHint: true,
+                            hintText:
+                                'Paste JSON copied from FutureMirror here.'))),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel')),
+                  FilledButton.icon(
+                      onPressed: () => Navigator.pop(context, true),
+                      icon: const Icon(Icons.download_done),
+                      label: const Text('Validate and import'))
+                ]));
+    if (accepted != true || !mounted) {
+      source.dispose();
+      return;
+    }
+    try {
+      final decoded = jsonDecode(source.text);
+      if (decoded is! Map) {
+        throw const FormatException('The model must be a JSON object.');
+      }
+      final imported =
+          OperationalModel.fromJson(Map<String, dynamic>.from(decoded));
+      setState(() {
+        modelNodes = imported.nodes;
+        modelEdges = imported.edges;
+        selectedNode = null;
+      });
+      await _persistModel();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Imported ${imported.nodes.length} systems and ${imported.edges.length} dependencies.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Model import failed: $error')));
+    } finally {
+      source.dispose();
+    }
   }
 
   void update(void Function() fn) {
@@ -1118,17 +1188,26 @@ class _HomeState extends State<Home> {
     final labels = {for (final node in modelNodes) node.id: node.label};
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _section('Operational model',
-          'Customize the systems and directional dependencies used by every new simulation',
-          action: Wrap(spacing: 8, children: [
-            OutlinedButton.icon(
-                onPressed: _resetModel,
-                icon: const Icon(Icons.restart_alt),
-                label: const Text('Reset defaults')),
-            FilledButton.icon(
-                onPressed: () => _editNode(),
-                icon: const Icon(Icons.add),
-                label: const Text('Add system'))
-          ])),
+          'Customize the systems and directional dependencies used by every new simulation'),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        FilledButton.icon(
+            onPressed: () => _editNode(),
+            icon: const Icon(Icons.add),
+            label: const Text('Add system')),
+        OutlinedButton.icon(
+            onPressed: _importModelJson,
+            icon: const Icon(Icons.content_paste),
+            label: const Text('Import JSON')),
+        OutlinedButton.icon(
+            onPressed: _copyModelJson,
+            icon: const Icon(Icons.copy_all_outlined),
+            label: const Text('Copy JSON')),
+        OutlinedButton.icon(
+            onPressed: _resetModel,
+            icon: const Icon(Icons.restart_alt),
+            label: const Text('Reset defaults'))
+      ]),
+      const SizedBox(height: 12),
       _card(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           const Expanded(
