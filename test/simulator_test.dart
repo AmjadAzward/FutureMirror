@@ -40,7 +40,8 @@ void main() {
   test('saved history JSON round-trips without losing scenario data', () async {
     final scenario = Scenario(name: 'Supply, demand "stress"', horizonDays: 90);
     final result = await Simulator.run(scenario);
-    final original = SavedRun(DateTime.utc(2026, 11, 18), scenario, result);
+    final original = SavedRun(DateTime.utc(2026, 11, 18), scenario, result,
+        OperationalModel.defaults());
 
     final decoded = LocalStore.decode(LocalStore.encode([original]));
 
@@ -48,6 +49,25 @@ void main() {
     expect(decoded.single.scenario.name, scenario.name);
     expect(decoded.single.scenario.horizonDays, 90);
     expect(decoded.single.result.totalExtraCost, result.totalExtraCost);
+    expect(decoded.single.model?.nodes, hasLength(nodes.length));
+    expect(decoded.single.model?.edges, hasLength(edges.length));
+  });
+
+  test('legacy saved runs without model snapshots remain compatible', () async {
+    final scenario = Scenario();
+    final result = await Simulator.run(scenario);
+    final legacyJson = jsonEncode([
+      {
+        'timestamp': DateTime.utc(2026, 1, 1).toIso8601String(),
+        'scenario': scenario.toJson(),
+        'result': result.toJson()
+      }
+    ]);
+
+    final decoded = LocalStore.decode(legacyJson);
+
+    expect(decoded.single.model, isNull);
+    expect(decoded.single.result.impacts, isNotEmpty);
   });
 
   test('CSV export escapes values and includes every impacted system',

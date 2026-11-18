@@ -24,7 +24,7 @@ FutureMirror is a native Windows laboratory for constructing disruption scenario
 | Area | Capability |
 |---|---|
 | Scenario laboratory | Model workforce, supplier, demand, technology, and cash-flow pressures |
-| Reality map | Inspect directional relationships between operational systems |
+| Reality map | Inspect relationships and drag systems to arrange the graph |
 | Model editor | Add, edit, and remove systems and weighted directional dependencies |
 | Decision dashboard | Review illustrative cost, risk, delay, and affected-system indicators |
 | Comparison | Pin one result and compare it with another saved scenario |
@@ -70,6 +70,7 @@ The optional Rust executable is launched as a local child process. No network so
 - Ranked illustrative cost, risk, delay, and impact indicators
 - Deterministic local execution for reproducible scenarios
 - Persistent custom models stored locally beside simulation history
+- Reproducible saved runs containing the exact operational-model snapshot used at execution time
 
 > [!IMPORTANT]
 > FutureMirror v0.1 is an uncalibrated technical prototype. Its data, dependencies, and coefficients are fictional. Outputs are illustrative scenarios, not predictions, financial advice, or validated operational guidance.

@@ -8,6 +8,9 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Exact operational-model snapshots inside newly saved simulation runs
+- Drag-to-arrange system positioning on the Reality Map
+- Backward-compatible loading for history created before model snapshots
 - Persistent operational-model editor for systems, categories, costs, risks, and dependencies
 - Add, edit, delete, validate, and reset workflows for the operational graph
 - Custom-model simulation and model-validation test coverage

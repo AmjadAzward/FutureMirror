@@ -324,16 +324,21 @@ class SavedRun {
   final DateTime timestamp;
   final Scenario scenario;
   final SimulationResult result;
-  SavedRun(this.timestamp, this.scenario, this.result);
+  final OperationalModel? model;
+  SavedRun(this.timestamp, this.scenario, this.result, [this.model]);
   Map<String, dynamic> toJson() => {
         'timestamp': timestamp.toIso8601String(),
         'scenario': scenario.toJson(),
-        'result': result.toJson()
+        'result': result.toJson(),
+        if (model != null) 'model': model!.toJson()
       };
   factory SavedRun.fromJson(Map<String, dynamic> j) => SavedRun(
       DateTime.parse(j['timestamp']),
       Scenario.fromJson(Map<String, dynamic>.from(j['scenario'])),
-      SimulationResult.fromJson(Map<String, dynamic>.from(j['result'])));
+      SimulationResult.fromJson(Map<String, dynamic>.from(j['result'])),
+      j['model'] == null
+          ? null
+          : OperationalModel.fromJson(Map<String, dynamic>.from(j['model'])));
 }
 
 class LocalStore {
@@ -480,6 +485,8 @@ class SimulationExporter {
       ['Timestamp', run.timestamp.toIso8601String()],
       ['Horizon days', run.scenario.horizonDays],
       ['Engine', run.result.engine],
+      ['Model systems', run.model?.nodes.length ?? 'Legacy run'],
+      ['Model dependencies', run.model?.edges.length ?? 'Legacy run'],
       ['Total extra cost', run.result.totalExtraCost],
       ['Average projected risk', run.result.avgProjectedRisk],
       ['Maximum delay days', run.result.maxDelayDays],

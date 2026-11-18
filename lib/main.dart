@@ -58,6 +58,7 @@ class _HomeState extends State<Home> {
   List<MirrorNode> modelNodes = List.of(nodes);
   List<MirrorEdge> modelEdges = List.of(edges);
   String? selectedNode;
+  String? draggingNode;
   @override
   void initState() {
     super.initState();
@@ -89,7 +90,10 @@ class _HomeState extends State<Home> {
       final computed = await Simulator.run(scenario.copy(),
           modelNodes: modelNodes, modelEdges: modelEdges);
       if (save) {
-        history.insert(0, SavedRun(DateTime.now(), scenario.copy(), computed));
+        history.insert(
+            0,
+            SavedRun(DateTime.now(), scenario.copy(), computed,
+                OperationalModel(List.of(modelNodes), List.of(modelEdges))));
         if (history.length > 80) history = history.take(80).toList();
         await LocalStore.save(history);
       }
@@ -139,8 +143,11 @@ class _HomeState extends State<Home> {
     final current = result;
     if (current == null) return;
     try {
-      final file = await SimulationExporter.saveCsv(
-          SavedRun(DateTime.now(), scenario.copy(), current));
+      final file = await SimulationExporter.saveCsv(SavedRun(
+          DateTime.now(),
+          scenario.copy(),
+          current,
+          OperationalModel(List.of(modelNodes), List.of(modelEdges))));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('CSV exported to ${file.path}')));
@@ -154,6 +161,24 @@ class _HomeState extends State<Home> {
   Future<void> _persistModel() async {
     await OperationalModelStore.save(OperationalModel(modelNodes, modelEdges));
     if (mounted) await _simulate(save: false);
+  }
+
+  Future<void> _loadRun(SavedRun run) async {
+    setState(() {
+      scenario = run.scenario.copy();
+      scenarioNameController.text = scenario.name;
+      result = run.result;
+      if (run.model != null) {
+        modelNodes = List.of(run.model!.nodes);
+        modelEdges = List.of(run.model!.edges);
+        selectedNode = null;
+      }
+      page = 1;
+    });
+    if (run.model != null) {
+      await OperationalModelStore.save(
+          OperationalModel(modelNodes, modelEdges));
+    }
   }
 
   Future<void> _editNode([MirrorNode? existing]) async {
@@ -878,13 +903,53 @@ class _HomeState extends State<Home> {
                           setState(() => selectedNode = closest?.id);
                         }
                       },
+                      onPanStart: (e) {
+                        MirrorNode? closest;
+                        var distance = double.infinity;
+                        for (final node in modelNodes) {
+                          final dx = node.x * c.maxWidth - e.localPosition.dx;
+                          final dy = node.y * c.maxHeight - e.localPosition.dy;
+                          final candidate = dx * dx + dy * dy;
+                          if (candidate < distance) {
+                            distance = candidate;
+                            closest = node;
+                          }
+                        }
+                        if (distance < 1600) {
+                          setState(() {
+                            draggingNode = closest?.id;
+                            selectedNode = closest?.id;
+                          });
+                        }
+                      },
+                      onPanUpdate: (e) {
+                        final id = draggingNode;
+                        if (id == null) return;
+                        final x = (e.localPosition.dx / c.maxWidth)
+                            .clamp(.08, .92)
+                            .toDouble();
+                        final y = (e.localPosition.dy / c.maxHeight)
+                            .clamp(.08, .86)
+                            .toDouble();
+                        setState(() => modelNodes = modelNodes
+                            .map((node) => node.id == id
+                                ? node.copyWith(x: x, y: y)
+                                : node)
+                            .toList());
+                      },
+                      onPanEnd: (_) {
+                        if (draggingNode == null) return;
+                        setState(() => draggingNode = null);
+                        OperationalModelStore.save(
+                            OperationalModel(modelNodes, modelEdges));
+                      },
                       child: CustomPaint(
                           painter: GraphPainter(
                               result, selectedNode, modelNodes, modelEdges),
                           child: const SizedBox.expand())))),
           const SizedBox(height: 8),
           const Text(
-              'Click a node to inspect it. Connections represent example dependencies, not verified operational relationships.',
+              'Click a system to inspect it, or drag it to arrange the graph. Connections are user-configurable relationships, not verified operational facts.',
               style: TextStyle(color: muted, fontSize: 11))
         ])),
         const SizedBox(height: 16),
@@ -1039,12 +1104,7 @@ class _HomeState extends State<Home> {
                           style: const TextStyle(fontWeight: FontWeight.w700)),
                       IconButton(
                           tooltip: 'Load scenario',
-                          onPressed: () => setState(() {
-                                scenario = h.scenario.copy();
-                                scenarioNameController.text = scenario.name;
-                                result = h.result;
-                                page = 1;
-                              }),
+                          onPressed: () => _loadRun(h),
                           icon: const Icon(Icons.open_in_new, size: 18)),
                       IconButton(
                           tooltip: 'Delete run',
