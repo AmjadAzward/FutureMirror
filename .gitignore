@@ -1,0 +1,10 @@
+.dart_tool/
+.tools/
+.flutter-plugins*
+.packages
+build/
+engine/target/
+windows/flutter/ephemeral/
+.idea/
+.vscode/
+*.iml
